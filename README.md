@@ -6,10 +6,12 @@
 
 ## 📖 Quick Links
 
-- **[User Guide](USER_GUIDE.md)** ← Start here! Learn how to use the app
+- **[Quick Start](#-quick-start)** ← Set up backend, frontend, database, and RAG
+- **[User Guide](USER_GUIDE.md)** - Learn how to use the app
 - **[Getting Started](GETTING_STARTED.md)** - Setup instructions
-- **[Technical Spec](docs/technical-spec.md)** - Architecture & implementation details
-- **[Book Integration](docs/book-integration-guide.md)** - How the app integrates with The Rust Programming Language book
+- **[GitHub Setup](GITHUB_SETUP.md)** - Repo / contribution setup
+- **[Architecture](#-hybrid-rag--llm-architecture)** - How the hybrid RAG + LLM system works
+- **[API Reference](#-api-reference)** - Endpoint list
 
 ---
 
@@ -37,37 +39,50 @@ Most coding tutorials teach syntax. **This teaches thinking.**
 
 ```
 rust-learning-app/
-├── backend/                 # Node.js + TypeScript API
+├── backend/                 # Node.js + TypeScript API (port 3001)
 │   ├── src/
-│   │   ├── index.ts        # Main server entry
+│   │   ├── index.ts        # Express server entry + route mounting
+│   │   ├── db/
+│   │   │   ├── client.ts   # pg Pool + pgvector registration
+│   │   │   └── migrations.ts # Idempotent seed on boot
 │   │   ├── routes/         # API endpoints
-│   │   │   ├── sessions.ts # Core learning interactions
+│   │   │   ├── sessions.ts # Core planner/mentor interactions
 │   │   │   ├── exercises.ts
 │   │   │   ├── concepts.ts
 │   │   │   ├── progress.ts
-│   │   │   └── book-integration.ts
-│   │   ├── state-machines/ # The magic happens here
+│   │   │   ├── execute.ts  # Rust Playground proxy
+│   │   │   └── book-integration.ts # RAG semantic search
+│   │   ├── state-machines/ # Deterministic flow control
 │   │   │   ├── planner.ts  # 11-step decomposition engine
-│   │   │   └── mentor.ts   # 5-stage Socratic teaching
+│   │   │   └── mentor.ts   # 5-stage Socratic ladder
 │   │   ├── services/       # Business logic
+│   │   │   ├── llm.ts      # OpenRouter chat completions
+│   │   │   ├── embeddings.ts # OpenRouter embeddings
+│   │   │   ├── rag.ts      # Chunking + vector retrieval
 │   │   │   ├── error-detector.ts
-│   │   │   ├── read-along.ts
 │   │   │   └── discussion-prompts.ts
 │   │   └── types/          # TypeScript interfaces
+│   ├── scripts/
+│   │   └── ingest-book.ts  # One-time PDF → embeddings ingestion
+│   ├── .env.example
 │   ├── package.json
 │   └── tsconfig.json
 │
-├── frontend/                # React + TypeScript SPA
+├── frontend/                # React + TypeScript SPA (port 3000)
 │   ├── src/
+│   │   ├── main.tsx
 │   │   ├── App.tsx
+│   │   ├── api/            # API client
+│   │   ├── store/          # Zustand stores (planner, mentor)
 │   │   ├── pages/
 │   │   │   ├── Home.tsx
 │   │   │   ├── PlannerSession.tsx
 │   │   │   ├── MentorSession.tsx
 │   │   │   └── Dashboard.tsx
-│   │   ├── components/
-│   │   ├── styles/
-│   │   └── utils/
+│   │   ├── components/     # CodeEditor, MentorChat, ChoiceCard, ...
+│   │   └── styles/
+│   ├── .env.example
+│   ├── vite.config.ts
 │   ├── package.json
 │   └── tsconfig.json
 │
@@ -93,35 +108,70 @@ rust-learning-app/
 ## 🚀 Quick Start
 
 ### Prerequisites
-- Node.js 18+
-- PostgreSQL 14+
-- npm or yarn
+- **Node.js 18+**
+- **PostgreSQL 14+** with the [**pgvector**](https://github.com/pgvector/pgvector) extension (used for book semantic search)
+- An **[OpenRouter](https://openrouter.ai/) API key** (single key powers both chat + embeddings)
 
-### Backend Setup
+### 1. Database Setup
+
+Create the database, enable pgvector, and load the schema + seed data:
+
 ```bash
-cd backend
-npm install
-npm run dev
-```
+# Create a role + database (adjust names to taste)
+psql postgres -c "CREATE USER rust_learner WITH PASSWORD 'dev_password';"
+psql postgres -c "CREATE DATABASE rust_learning OWNER rust_learner;"
 
-Runs on `http://localhost:3001`
+# Enable pgvector (requires the pgvector extension installed on the server)
+psql rust_learning -c "CREATE EXTENSION IF NOT EXISTS vector;"
 
-### Frontend Setup
-```bash
-cd frontend
-npm install
-npm run dev
-```
-
-Opens on `http://localhost:3000`
-
-### Database Setup
-```bash
-psql postgres -c "CREATE DATABASE rust_learning;"
+# Load schema + book-integration tables + seed data
 psql rust_learning < database/schema.sql
 psql rust_learning < database/schema-extensions.sql
 psql rust_learning < database/sample-exercises.sql
 ```
+
+> The schema is **idempotent** — safe to re-run. It seeds 15 concepts, 8 exercises, 9 error mappings, and a demo user (`id = 1`) so the app works without authentication.
+
+### 2. Backend Setup
+
+```bash
+cd backend
+cp .env.example .env      # then edit .env with your values
+npm install
+npm run dev               # http://localhost:3001
+```
+
+Required `.env` values (see `backend/.env.example`):
+
+```bash
+DATABASE_URL=postgresql://rust_learner:dev_password@localhost:5432/rust_learning
+OPENROUTER_API_KEY=sk-or-v1-your-key-here
+OPENROUTER_BASE_URL=https://openrouter.ai/api/v1
+CHAT_MODEL=openai/gpt-4o
+EMBEDDING_MODEL=openai/text-embedding-3-small
+PORT=3001
+```
+
+### 3. (Optional) Ingest the book for RAG
+
+To power book-grounded semantic search, ingest a PDF of *The Rust Programming Language* **once**:
+
+```bash
+cd backend
+npm run ingest-book -- /path/to/The\ Rust\ Programming\ Language.pdf
+```
+
+This chunks the PDF, generates embeddings via OpenRouter, and stores them in the `book_embeddings` (pgvector) table. It is a **one-time script**, not run automatically at server start. The app runs fine without it — book search simply returns no results until ingestion is done.
+
+### 4. Frontend Setup
+
+```bash
+cd frontend
+npm install
+npm run dev               # http://localhost:3000
+```
+
+The Vite dev server proxies `/api` → `http://localhost:3001`, so start the backend first.
 
 ---
 
@@ -162,19 +212,64 @@ psql rust_learning < database/sample-exercises.sql
 ## 🛠️ Technology Stack
 
 **Backend:**
-- Node.js + Express + TypeScript
-- PostgreSQL 14+ (with JSONB)
-- LLM integration (OpenAI GPT-4, Anthropic Claude)
+- Node.js + Express + TypeScript (port 3001)
+- PostgreSQL 14+ with JSONB + **pgvector** for embeddings
+- **Hybrid RAG + LLM** via [OpenRouter](https://openrouter.ai/) — chat (`openai/gpt-4o`) and embeddings (`openai/text-embedding-3-small`) through one API
+- Deterministic state machines drive the Planner (11 steps) and Mentor (5 stages) — the LLM fills content, the state machine controls flow
+- Sandboxed code execution proxied to the [Rust Playground](https://play.rust-lang.org/)
 
 **Frontend:**
 - React 18 + TypeScript
-- Vite (fast dev server & builds)
+- Vite (fast dev server & builds, `/api` proxy)
+- **CodeMirror 6** editor with Rust syntax highlighting
 - Zustand (state management)
-- Responsive dark theme (GitHub-inspired)
+- Responsive dark theme (GitHub-inspired: `#0d1117` bg, `#c9d1d9` text, `#58a6ff` accent)
 
 **Database:**
-- 13 tables (7 core + 6 book integration)
-- Pre-loaded: 15 concepts, 8 exercises, 9 error mappings
+- Core learning tables + book-integration tables (`book_chunks`, `book_embeddings vector(1536)`)
+- Pre-loaded: 15 concepts, 8 exercises, 9 error mappings, 1 demo user
+
+---
+
+## 🧩 Hybrid RAG + LLM Architecture
+
+The app never lets the LLM free-run the pedagogy. **Deterministic state machines own the flow; the LLM only fills in content at each controlled step:**
+
+1. A request advances the Planner (11 steps) or Mentor (5 stages) state machine.
+2. The machine decides the next step/stage and what kind of content is needed.
+3. For book-grounded answers, **RAG** embeds the query, runs a pgvector similarity search over ingested book chunks, and injects the top matches as context.
+4. The **LLM** (OpenRouter) generates the step content (question, options, explanation) constrained by that context.
+5. The state, choices, and progress are persisted to Postgres.
+
+This keeps interactions reproducible and on-rails while still benefiting from LLM fluency and book grounding.
+
+### Mentor escalation ladder
+
+```
+OPEN_QUESTION → NARROWING → FORCED_CHOICE → CONCRETE_ANCHOR → TRANSFER_CHECK → MASTERED
+```
+
+The ladder narrows scaffolding when the learner is stuck and opens back up as understanding is demonstrated.
+
+---
+
+## 🔌 API Reference
+
+All responses use a consistent envelope: `{ success: boolean, data?: T, error?: string }`.
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `GET`  | `/api/health` | DB / LLM / RAG readiness check |
+| `GET`  | `/api/concepts` | List all Rust concepts |
+| `GET`  | `/api/exercises` | List all exercises |
+| `POST` | `/api/sessions` | Start a session — body `{ mode: 'planner' \| 'mentor', exerciseId?, conceptId? }` |
+| `GET`  | `/api/sessions/:id` | Fetch current session state |
+| `POST` | `/api/sessions/:id/respond` | Submit a response, advance the state machine |
+| `GET`  | `/api/progress?userId=1` | Concept mastery summary for a user |
+| `POST` | `/api/progress` | Record a learning event / progress update |
+| `POST` | `/api/execute` | Compile + run Rust via the Playground proxy |
+| `POST` | `/api/book/search` | Semantic (RAG) search over ingested book chunks |
+| `GET`  | `/api/book/status` | Book ingestion status (chunk count) |
 
 ---
 
@@ -242,13 +337,11 @@ This app is built on research about how people actually learn to code:
 
 ## 📖 Documentation
 
-- **USER_GUIDE.md** (839 lines) - How to use the app
-- **GETTING_STARTED.md** - Step-by-step setup
-- **docs/technical-spec.md** - Full architecture
-- **docs/ui-mockups-and-flows.md** - Design specs
-- **docs/curriculum-alignment.md** - Book chapter mapping
-- **docs/book-integration-guide.md** - Book features
-- **docs/llm-prompts.md** - LLM integration guide
+- **[USER_GUIDE.md](USER_GUIDE.md)** - How to use the app
+- **[GETTING_STARTED.md](GETTING_STARTED.md)** - Step-by-step setup
+- **[GITHUB_SETUP.md](GITHUB_SETUP.md)** - Repo / contribution setup
+- **[Hybrid RAG + LLM Architecture](#-hybrid-rag--llm-architecture)** - How the system is wired
+- **[API Reference](#-api-reference)** - Endpoint list
 
 ---
 
@@ -274,9 +367,9 @@ MIT License - See LICENSE file
 ## 🙋 Questions?
 
 - **How do I use this?** → Read [USER_GUIDE.md](USER_GUIDE.md)
-- **How do I set it up?** → Read [GETTING_STARTED.md](GETTING_STARTED.md)
-- **How does it work?** → Read [docs/technical-spec.md](docs/technical-spec.md)
-- **How is the book integrated?** → Read [docs/book-integration-guide.md](docs/book-integration-guide.md)
+- **How do I set it up?** → Read the [Quick Start](#-quick-start) or [GETTING_STARTED.md](GETTING_STARTED.md)
+- **How does it work?** → Read the [Hybrid RAG + LLM Architecture](#-hybrid-rag--llm-architecture) section
+- **How is the book integrated?** → Ingest a PDF with `npm run ingest-book` and query `/api/book/search`
 
 ---
 

@@ -1,12 +1,13 @@
 {
   "name": "rust-learning-app-backend",
   "version": "1.0.0",
-  "description": "Adaptive Rust learning platform with Socratic pedagogy",
+  "description": "Adaptive Rust learning platform with hybrid RAG + LLM and deterministic state machines",
   "main": "src/index.ts",
   "scripts": {
     "dev": "ts-node-dev --respawn --transpile-only src/index.ts",
     "build": "tsc",
     "start": "node dist/index.js",
+    "ingest-book": "ts-node-dev --transpile-only scripts/ingest-book.ts",
     "test": "jest",
     "lint": "eslint src --ext .ts"
   },
@@ -15,22 +16,29 @@
     "learning",
     "socratic",
     "pedagogy",
-    "adaptive"
+    "adaptive",
+    "rag",
+    "pgvector",
+    "openrouter"
   ],
   "author": "",
   "license": "MIT",
   "dependencies": {
     "express": "^4.18.2",
     "pg": "^8.10.0",
+    "pgvector": "^0.2.0",
     "dotenv": "^16.3.1",
     "cors": "^2.8.5",
     "body-parser": "^1.20.2",
-    "openai": "^4.11.1"
+    "openai": "^4.11.1",
+    "pdf-parse": "^1.1.1"
   },
   "devDependencies": {
     "@types/express": "^4.17.17",
     "@types/node": "^20.3.1",
     "@types/pg": "^8.10.2",
+    "@types/cors": "^2.8.13",
+    "@types/pdf-parse": "^1.1.4",
     "typescript": "^5.1.3",
     "ts-node-dev": "^2.0.0",
     "@typescript-eslint/eslint-plugin": "^5.59.11",
