@@ -1,7 +1,9 @@
 import OpenAI from 'openai';
 import dotenv from 'dotenv';
+import path from 'path';
 
-dotenv.config();
+// Load .env from backend directory explicitly
+dotenv.config({ path: path.resolve(__dirname, '../../.env') });
 
 /**
  * OpenRouter client. OpenRouter is OpenAI-API compatible, so we reuse the
@@ -15,6 +17,7 @@ export const CHAT_MODEL = process.env.CHAT_MODEL || 'openai/gpt-4o';
 export const EMBEDDING_MODEL =
   process.env.EMBEDDING_MODEL || 'openai/text-embedding-3-small';
 
+
 if (!OPENROUTER_API_KEY) {
   console.warn(
     '[llm] OPENROUTER_API_KEY is not set. LLM and embedding calls will fail ' +
@@ -26,6 +29,7 @@ const client = new OpenAI({
   apiKey: OPENROUTER_API_KEY,
   baseURL: OPENROUTER_BASE_URL,
   defaultHeaders: {
+    'Authorization': `Bearer ${OPENROUTER_API_KEY}`,
     'HTTP-Referer': 'https://github.com/resppiano/Rust-Learning-App',
     'X-Title': 'Rust Learning App',
   },

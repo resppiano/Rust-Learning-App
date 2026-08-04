@@ -22,7 +22,8 @@ import { embedBatch } from '../src/services/llm';
 import { chunkText } from '../src/services/rag';
 import { toVectorLiteral } from '../src/services/embeddings';
 
-dotenv.config();
+// Load .env from backend directory explicitly
+dotenv.config({ path: path.resolve(__dirname, '../.env') });
 
 const DEFAULT_PATHS = [
   process.argv[2],
